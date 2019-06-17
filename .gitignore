@@ -28,3 +28,6 @@ lia.cache
 nia.cache
 nlia.cache
 nra.cache
+coq/*.ml
+coq/*.glob
+coq/*.mli
