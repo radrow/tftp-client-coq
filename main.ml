@@ -92,7 +92,7 @@ let () =
         | Reading (_, _, _, buf) ->
           write_file file_desc (list_to_str buf); loop new_state
         | ReadingFinished buf -> write_file file_desc (list_to_str buf); print_string "done."
-        | ReadingError (er, msg) -> print_string (list_to_str msg); exit 1
+        | ReadingError (er, msg) -> print_endline (list_to_str msg); exit 1
       end in
     send_packet sock hostname init_port (list_to_str (init_read_packet_serialized (str_to_list filename)));
     loop (init_read_state (str_to_list filename))
@@ -110,7 +110,7 @@ let () =
         | WritingInit (_, _, _) -> loop new_state
         | Writing (_, _, _, _, _) -> loop new_state
         | writingFinished -> print_string "done."
-        | WritingError (er, msg) -> print_string (list_to_str msg); exit 1
+        | WritingError (er, msg) -> print_endline (list_to_str msg); exit 1
       end in
     send_packet sock hostname init_port (list_to_str (init_write_packet_serialized (str_to_list filename)));
     loop (init_write_state (str_to_list filename) (str_to_list data))
