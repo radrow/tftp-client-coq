@@ -133,6 +133,11 @@ Qed.
 Definition serialize_string (ss : string) : string -> string :=
   fun s => string_append ss (String zero s).
 
+Theorem extended_serialize_string : forall (c : ascii) (s : string),
+    serialize_string (String c s) "" = String c (serialize_string s "").
+  intros. induction s; trivial.
+Qed.
+
 
 Definition serialize_N16 (n : N16) : string -> string :=
   fun s => String (ascii_of_N (N16_to_N n / 256)) (String (ascii_of_N (N16_to_N n)) s).
@@ -254,12 +259,6 @@ Definition deserialize_packet {m : mode} : deserializer (packet Server m) :=
                   | _ => deserializer_fail
                   end.
 
-Definition dup :=
-  serialize_packet (ACK Client (exist _ 21 eq_refl)).
-
-Compute dup.
-
-
 Theorem embedding_opcode : forall (m : mode) (p : packet Client m),
     run_deserializer (serialize_opcode p "") (finalize_deserializer deserialize_N16) =
     N_to_N16 (opcode p).
@@ -284,35 +283,3 @@ Proof.
        right;
        discriminate).
 Qed.
-
-Theorem extended_serialize_string : forall (c : ascii) (s : string),
-    serialize_string (String c s) "" = String c (serialize_string s "").
-  intros. induction s; trivial.
-Qed.
-
-
-Theorem embedding_string : forall (s : string),
-    run_deserializer (serialize_string s "") (finalize_deserializer deserialize_string) = Some s.
-Proof.
-  intros.
-  induction s.
-  * compute; trivial.
-  * rewrite extended_serialize_string.
-Admitted.    
-    
-    
-
-(* Theorem embedding_data : forall (block : N16) (data : string), *)
-(*     run_deserializer (serialize_packet (DATA Client block data)) (finalize_deserializer deserialize_packet) = *)
-(*     Some (DATA Server block data). *)
-(* Proof. *)
-(*   intros. *)
-(*   unfold serialize_packet. *)
-(*   unfold serialize_opcode. *)
-(*   unfold serialize_N16. *)
-(*   unfold serialize_string. *)
-(*   simpl. *)
-(*   compute. *)
-(*   unfold run_deserializer. *)
-(*   rewrite string_append_empty. *)
-(*   compute. *)
