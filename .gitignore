@@ -31,3 +31,5 @@ nra.cache
 coq/*.ml
 coq/*.glob
 coq/*.mli
+_build
+main.byte
