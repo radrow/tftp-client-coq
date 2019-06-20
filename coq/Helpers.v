@@ -2,6 +2,7 @@ Require Import Coq.Strings.String.
 Require Import Coq.Strings.Ascii.
 Require Import Coq.NArith.BinNat.
 Require Import Coq.Arith.Compare.
+Require Import Coq.Logic.FunctionalExtensionality.
 Require Import Coq.Logic.Eqdep_dec.
 Require Import ZArith.
 
@@ -62,6 +63,63 @@ Proof.
   * rewrite H0. reflexivity.
 Qed.
 
+
+Lemma safe_N16_incr_any : forall (n16 : N16),
+    (N16_to_N n16 < 256*256 - 1) -> exists (m16 : N16), N_to_N16 (N16_to_N n16 + 1) = Some m16.
+Proof.
+  intros.
+  cut (N16_to_N n16 + 1 < 256 * 256).
+  * generalize (N16_to_N n16 + 1).
+    intros.
+    exists (exist _ n H0).
+    unfold N_to_N16.
+    cut (
+        (fun pf : (n ?= 256 * 256) = Lt =>
+           Some (exist (fun n0 : N => n0 < 256 * 256) n pf))
+        =
+        (fun pf : (n ?= 256 * 256) = Lt =>
+           Some (exist (fun n0 : N => n0 < 256 * 256) n H0))).
+    ** intros ->.
+       generalize (eq_refl (n ?= 256 * 256)).
+       revert H0.
+       case_eq (n ?= 256 * 256);
+         intros; unfold N.lt in H1; congruence + reflexivity.
+    ** extensionality pf.
+       f_equal.
+       f_equal.
+       apply UIP_dec.
+       decide equality.
+  * zify; omega.
+Qed.
+
+Lemma safe_N16_incr : forall (n16 : N16),
+    let n := N16_to_N n16 + 1 in
+    (n + 1 < 256*256) -> exists (H0 : n < 256*256), N_to_N16 n = Some (exist _ n H0).
+Proof.
+  intros.
+  cut (n < 256 * 256).
+  * generalize n.
+    intros.
+    eexists.
+    unfold N_to_N16.
+    cut (
+        (fun pf : (n0 ?= 256 * 256) = Lt =>
+           Some (exist (fun n1 : N => n1 < 256 * 256) n0 pf))
+        =
+        (fun pf : (n0 ?= 256 * 256) = Lt =>
+           Some (exist (fun n1 : N => n1 < 256 * 256) n0 H0))).
+    ** intros ->.
+       generalize (eq_refl (n0 ?= 256 * 256)).
+       revert H0.
+       case_eq (n0 ?= 256 * 256);
+         intros; unfold N.lt in H1; congruence + reflexivity.
+    ** extensionality pf.
+       f_equal.
+       f_equal.
+       apply UIP_dec.
+       decide equality.
+  * zify; omega.
+Qed.
 
 Definition N16_of_two_N8 (a : N8) (b : N8): N16.
   refine (exist _ (N8_to_N a * 256 + N8_to_N b) (two_N8_bounds a b)).

@@ -275,66 +275,6 @@ Proof.
     ** simpl. left. reflexivity.
 Qed.
 
-Lemma safe_N16_incr_any : forall (n16 : N16),
-    (N16_to_N n16 < 256*256 - 1) -> exists (m16 : N16), N_to_N16 (N16_to_N n16 + 1) = Some m16.
-Proof.
-  intros.
-  cut (N16_to_N n16 + 1 < 256 * 256).
-  * generalize (N16_to_N n16 + 1).
-    intros.
-    exists (exist _ n H0).
-    unfold N_to_N16.
-    cut (
-        (fun pf : (n ?= 256 * 256) = Lt =>
-           Some (exist (fun n0 : N => n0 < 256 * 256) n pf))
-        =
-        (fun pf : (n ?= 256 * 256) = Lt =>
-           Some (exist (fun n0 : N => n0 < 256 * 256) n H0))).
-    ** intros ->.
-       generalize (eq_refl (n ?= 256 * 256)).
-       revert H0.
-       case_eq (n ?= 256 * 256);
-         intros; unfold N.lt in H1; congruence + reflexivity.
-    ** extensionality pf.
-       f_equal.
-       f_equal.
-       apply UIP_dec.
-       decide equality.
-  * zify; omega.
-Qed.
-
-Lemma safe_N16_incr : forall (n16 : N16),
-    let n := N16_to_N n16 + 1 in
-    (n + 1 < 256*256) -> exists (H0 : n < 256*256), N_to_N16 n = Some (exist _ n H0).
-Proof.
-  intros.
-  cut (n < 256 * 256).
-  * generalize n.
-    intros.
-    eexists.
-    unfold N_to_N16.
-    cut (
-        (fun pf : (n0 ?= 256 * 256) = Lt =>
-           Some (exist (fun n1 : N => n1 < 256 * 256) n0 pf))
-        =
-        (fun pf : (n0 ?= 256 * 256) = Lt =>
-           Some (exist (fun n1 : N => n1 < 256 * 256) n0 H0))).
-    ** intros ->.
-       generalize (eq_refl (n0 ?= 256 * 256)).
-       revert H0.
-       case_eq (n0 ?= 256 * 256);
-         intros; unfold N.lt in H1; congruence + reflexivity.
-    ** extensionality pf.
-       f_equal.
-       f_equal.
-       apply UIP_dec.
-       decide equality.
-  * zify; omega.
-Qed.
-
-
-
-
 Proposition ack_incr : forall (data : string) (st : read_state) (filename : string) (last_data : string) (block_sent : N16) (tout : N) (port : N),
     st = Reading tout port block_sent last_data /\ (N.of_nat (length data) = 512) /\ (N16_to_N block_sent < 256*256 - 1) -> 
     snd (handle_event_read (Packet Read port (DATA Server block_sent data)) st)
@@ -571,7 +511,6 @@ Proof.
        assert (exists xxx, N_to_N16 (N16_to_N prev_block + 1 + 1) = Some (exist _ (N16_to_N prev_block + 1 + 1) xxx)).
        +++ rewrite H2. rewrite H2 in H8.
            unfold N_to_N16. exists H8.
-
            cut (
                (fun pf : (N16_to_N next_block + 1 ?= 256 * 256) = Lt =>
                  Some (exist (fun n : N => n < 256 * 256) (N16_to_N next_block + 1) pf)) =
@@ -608,17 +547,20 @@ Proof.
     ++ zify. omega.
     + simpl. zify. omega.
       **** apply safe_N16_incr. zify. omega.
-      *** eexists. eexists.
+      *** do 2 eexists.
           case_eq (N16_to_N next_block =? N16_to_N prev_block); intro.
           **** exfalso. apply eq_sym in H2. apply N.eqb_eq in H2. congruence.
-          **** case_eq (N16_to_N next_block <? N16_to_N prev_block); intro.
-    + exfalso. apply eq_sym in H2. apply N.eqb_eq in H2. congruence.
-    + exfalso. apply eq_sym in H2. apply N.eqb_eq in H2. congruence.
-      * exfalso. assert (port = port). trivial. apply N.eqb_eq in H4. congruence.
+          **** case_eq (N16_to_N next_block <? N16_to_N prev_block); intro;
+                 (exfalso; apply eq_sym in H2; apply N.eqb_eq in H2; congruence).
+      * exfalso.
+        assert (port = port). reflexivity.
+        apply N.eqb_eq in H4.
+        congruence.
         Unshelve.
         exact "".
         exact "".
 Qed.
+
 
 Definition handle_unparsed_event_write (ev : unparsed_event) (st : write_state): (write_state * option (string * option N)) :=
   let pev :=
