@@ -3,6 +3,9 @@ Require Import Coq.Strings.String.
 Require Import Coq.Strings.Ascii.
 Require Import Coq.NArith.BinNat.
 Require Import Coq.Arith.Compare.
+Require Import Coq.Init.Nat.
+Require Import Coq.Logic.FunctionalExtensionality.
+Require Import Coq.Logic.Eqdep_dec.
 Require Import Program.
 
 Require Import Packet.
@@ -185,7 +188,7 @@ Definition handle_event_read (ev : event Read) (st : state Read) :
     [ | | |destruct s| | ]; congruence.
 Defined.
 
-Fact read_error_after_error :
+Proposition read_error_after_error :
   forall (ev : event _) (er_in : error) (msg_in : string),
   exists (er_out : error) (msg_out : string),
     fst (handle_event_read ev (ReadingError er_in msg_in)) = ReadingError er_out msg_out.
@@ -198,7 +201,7 @@ Proof.
     ** simpl. do 2 eexists. auto.
 Qed.
 
-Fact read_error_after_finito :
+Proposition read_error_after_finito :
   forall (ev : event _) (last_data : string),
   exists (er_out : error) (msg_out : string),
     fst (handle_event_read ev (ReadingFinished last_data)) = ReadingError er_out msg_out.
@@ -209,6 +212,169 @@ Proof.
   * dependent destruction p.
     ** simpl. do 2 eexists. auto.
     ** simpl. do 2 eexists. auto.
+Qed.
+
+Proposition finito_after_small_block :
+  forall (data : string) (st : read_state) (filename : string) (last_data : string) (block_sent : N16) (tout : N) (port : N),
+    (N.of_nat (length data) < 512) /\ ((st = ReadingInit tout filename /\ block_sent = exist _ 1 eq_refl) \/ st = Reading tout port block_sent last_data) ->
+    fst (handle_event_read (Packet Read port (DATA Server block_sent data)) st)
+    = ReadingFinished data.
+Proof.
+  intros.
+  destruct H.
+  destruct H0.
+  destruct H0.
+  * rewrite H0.
+    rewrite H1.
+    simpl.
+    case_eq (N.of_nat (length data) <? 512).
+    ** intuition.
+    ** intro. exfalso. apply N.ltb_lt in H. congruence.
+  * rewrite H0.
+    simpl.
+    case_eq (port =? port).
+    ** intro.
+       case_eq (N16_to_N block_sent =? N16_to_N block_sent).
+       *** intro.
+           case_eq (N.of_nat (length data) <? 512).
+           **** intuition.
+           **** intro. exfalso. apply N.ltb_lt in H. congruence.
+       *** intro.
+           exfalso.
+           assert (N16_to_N block_sent = N16_to_N block_sent).
+           trivial.
+           apply N.eqb_eq in H3. congruence.
+    ** intro.
+       exfalso.
+       assert (port = port). trivial. apply N.eqb_eq in H2. congruence.
+Qed.
+
+Proposition read_port_invariant : 
+  forall (st : read_state) (port : N) (tout : N) (block : N16) (prev_data : string) (buf : string) (ev : event Read),
+    st = Reading tout port block buf ->
+    let mport := working_port_read (fst (handle_event_read ev st))
+    in mport = None \/ mport = Some port.
+Proof.
+  intros. unfold mport.
+  rewrite H.
+  dependent destruction ev.
+  * simpl.
+    destruct (max_timeouts <=? tout);
+      simpl; [left|right]; reflexivity.
+  * dependent destruction p; simpl.
+    ** case_eq (port =? n); intro.
+       *** case_eq (N16_to_N block =? N16_to_N n0);
+             case_eq (N.of_nat (length s0) <? 512); intros.
+           **** simpl. left. reflexivity.
+           **** destruct (N_to_N16 (N16_to_N n0 + 1)).
+  + simpl. right. apply N.eqb_eq in H0. rewrite H0. reflexivity.
+  + simpl. left. reflexivity.
+    **** case_eq (N16_to_N n0 <? N16_to_N block); intro; simpl; [right|left]; reflexivity.
+    **** case_eq (N16_to_N n0 <? N16_to_N block); intro; simpl; [right|left]; reflexivity.
+    *** simpl. right. reflexivity.
+    ** simpl. left. reflexivity.
+Qed.
+
+Lemma safe_N16_incr_any : forall (n16 : N16),
+    (N16_to_N n16 < 256*256 - 1) -> exists (m16 : N16), N_to_N16 (N16_to_N n16 + 1) = Some m16.
+Proof.
+  intros.
+  cut (N16_to_N n16 + 1 < 256 * 256).
+  * generalize (N16_to_N n16 + 1).
+    intros.
+    exists (exist _ n H0).
+    unfold N_to_N16.
+    cut (
+        (fun pf : (n ?= 256 * 256) = Lt =>
+           Some (exist (fun n0 : N => n0 < 256 * 256) n pf))
+        =
+        (fun pf : (n ?= 256 * 256) = Lt =>
+           Some (exist (fun n0 : N => n0 < 256 * 256) n H0))).
+    ** intros ->.
+       generalize (eq_refl (n ?= 256 * 256)).
+       revert H0.
+       case_eq (n ?= 256 * 256);
+         intros; unfold N.lt in H1; congruence + reflexivity.
+    ** extensionality pf.
+       f_equal.
+       f_equal.
+       apply UIP_dec.
+       decide equality.
+  * zify; omega.
+Qed.
+
+Lemma safe_N16_incr : forall (n16 : N16),
+    let n := N16_to_N n16 + 1 in
+    (n + 1 < 256*256) -> exists (H0 : n < 256*256), N_to_N16 n = Some (exist _ n H0).
+Proof.
+  intros.
+  cut (n < 256 * 256).
+  * generalize n.
+    intros.
+    eexists.
+    unfold N_to_N16.
+    cut (
+        (fun pf : (n0 ?= 256 * 256) = Lt =>
+           Some (exist (fun n1 : N => n1 < 256 * 256) n0 pf))
+        =
+        (fun pf : (n0 ?= 256 * 256) = Lt =>
+           Some (exist (fun n1 : N => n1 < 256 * 256) n0 H0))).
+    ** intros ->.
+       generalize (eq_refl (n0 ?= 256 * 256)).
+       revert H0.
+       case_eq (n0 ?= 256 * 256);
+         intros; unfold N.lt in H1; congruence + reflexivity.
+    ** extensionality pf.
+       f_equal.
+       f_equal.
+       apply UIP_dec.
+       decide equality.
+  * zify; omega.
+Qed.
+
+
+
+
+Proposition ack_incr : forall (data : string) (st : read_state) (filename : string) (last_data : string) (block_sent : N16) (tout : N) (port : N),
+    st = Reading tout port block_sent last_data /\ (N.of_nat (length data) = 512) /\ (N16_to_N block_sent < 256*256 - 1) -> 
+    snd (handle_event_read (Packet Read port (DATA Server block_sent data)) st)
+    = Some (ACK Client block_sent).
+Proof.
+  intros.
+  destruct H.
+  destruct H0.
+  rewrite H.
+  simpl.
+  case_eq (port =? port).
+  * intro.
+    case_eq (N16_to_N block_sent =? N16_to_N block_sent).
+    ** intro.
+       case_eq (N.of_nat (length data) <? 512).
+       *** intro.
+           exfalso.
+           apply N.ltb_lt in H1.
+           rewrite H0 in H4.
+           discriminate.
+       *** intros.
+           cut (exists x, N_to_N16 (N16_to_N block_sent + 1) = Some x); revert H1.
+           **** intros.
+                destruct H5.
+                rewrite H5.
+                simpl.
+                reflexivity.
+           ****  apply safe_N16_incr_any.
+    ** intro.
+       exfalso.
+       assert (N16_to_N block_sent = N16_to_N block_sent).
+       trivial.
+       apply N.eqb_eq in H4.
+       congruence.
+  * intro.
+    exfalso.
+    assert (port = port).
+    trivial.
+    apply N.eqb_eq in H3.
+    congruence.
 Qed.
 
 
@@ -245,14 +411,12 @@ Definition handle_event_write (ev : event Write) (st : state Write) :
                            Some (ERROR Client Write NotDefined "Block number overflow")) in
       let make_data port buf prev_block :=
           let (data, rest_buf) := pop_block buf
-          in if String.eqb data ""
-             then (WritingFinished, None)
-             else match N_to_N16 (N16_to_N prev_block + 1) with
-                  | Some next_block => ( Writing 0 port prev_block data rest_buf,
-                                        Some (DATA Client next_block data)
-                                      )
-                  | None => overflow_err
-                  end in
+          in match N_to_N16 (N16_to_N prev_block + 1) with
+             | Some next_block => ( Writing 0 port prev_block data rest_buf,
+                                   Some (DATA Client next_block data)
+                                 )
+             | None => overflow_err
+             end in
       match ev with
            | Timeout Write =>
              match st with
@@ -281,17 +445,19 @@ Definition handle_event_write (ev : event Write) (st : state Write) :
                    else block_ord_err
                  | Writing _  writing_port prev_block prev_data buf =>
                    if writing_port =? port
-                   then if N16_to_N block_acked =? (N16_to_N prev_block) + 1
-                        then match N_to_N16 (N16_to_N prev_block + 1) with
-                             | None => (WritingError NotDefined "Block number overflow",
-                                       Some (ERROR Client Write NotDefined "Block number overflow"))
-                             | Some bs16 => make_data port buf bs16
-                             end
-                        else if N16_to_N block_acked =? N16_to_N prev_block
-                             then (st, Some (DATA Client block_acked prev_data))
-                             else if N16_to_N block_acked <? N16_to_N prev_block
+                   then if String.eqb buf ""
+                        then (WritingFinished, None)
+                        else if N16_to_N block_acked =? (N16_to_N prev_block) + 1
+                             then match N_to_N16 (N16_to_N prev_block + 1) with
+                                  | None => (WritingError NotDefined "Block number overflow",
+                                            Some (ERROR Client Write NotDefined "Block number overflow"))
+                                  | Some bs16 => make_data port buf bs16
+                                  end
+                             else if N16_to_N block_acked =? N16_to_N prev_block
+                                  then (st, Some (DATA Client block_acked prev_data))
+                                  else if N16_to_N block_acked <? N16_to_N prev_block
                                   then (st, None)
-                                  else block_ord_err
+                                       else block_ord_err
                    else (st, None)
                  | WritingError _ _ => (st, None)
                  | WritingFinished => (WritingError NotDefined "ACK after finish", None)
@@ -305,7 +471,7 @@ Definition handle_event_write (ev : event Write) (st : state Write) :
 Defined.
 
 
-Fact write_error_after_error :
+Proposition write_error_after_error :
   forall (ev : event _) (er_in : error) (msg_in : string),
   exists (er_out : error) (msg_out : string),
     fst (handle_event_write ev (WritingError er_in msg_in)) = WritingError er_out msg_out.
@@ -318,7 +484,7 @@ Proof.
     ** simpl. do 2 eexists. auto.
 Qed.
 
-Fact write_error_after_finito :
+Proposition write_error_after_finito :
   forall (ev : event _),
   exists (er_out : error) (msg_out : string),
     fst (handle_event_write ev WritingFinished) = WritingError er_out msg_out.
@@ -331,6 +497,128 @@ Proof.
     ** simpl. do 2 eexists. auto.
 Qed.
 
+
+Proposition finito_after_empty_data :
+  forall (st : write_state) (port : N) (tout : N) (prev_block : N16) (prev_data : string),
+    st = Writing tout port prev_block prev_data "" ->
+    fst (handle_event_write (Packet Write port (ACK Server prev_block)) st) = WritingFinished.
+Proof.
+  intros.
+  rewrite H.
+  simpl.
+  case_eq (port =? port); intros.
+  * case_eq (N16_to_N prev_block =? N16_to_N prev_block + 1); intros; simpl; reflexivity.
+  * exfalso. assert ((port =? port) = true). apply N.eqb_eq. trivial. congruence.
+Qed.
+
+Proposition write_port_invariant : 
+  forall (st : write_state) (port : N) (tout : N) (prev_block : N16) (prev_data : string) (buf : string) (ev : event Write),
+    st = Writing tout port prev_block prev_data buf ->
+    let mport := working_port_write (fst (handle_event_write ev st))
+    in mport = None \/ mport = Some port.
+Proof.
+  intros. unfold mport.
+  rewrite H.
+  dependent destruction ev.
+  * simpl.
+    destruct (max_timeouts <=? tout);
+      simpl; [left|right]; reflexivity.
+  * dependent destruction p.
+    ** destruct buf.
+       *** simpl.
+           destruct (port =? n); simpl; [left|right]; reflexivity.
+       *** simpl.
+           case_eq (port =? n); intro.
+           **** destruct (N16_to_N n0 =? N16_to_N prev_block + 1).
+                + destruct (N_to_N16 (N16_to_N prev_block + 1)).
+                  ++ destruct (N_to_N16 (N16_to_N n1 + 1));
+                [apply N.eqb_eq in H0; rewrite <- H0; right | left];
+                unfold working_port_write; destruct (pop_block (String a buf)); simpl; reflexivity.
+                  ++ simpl. left. reflexivity.
+                + destruct (N16_to_N n0 =? N16_to_N prev_block).
+                  ++ simpl. right. reflexivity.
+                  ++ destruct (N16_to_N n0 <? N16_to_N prev_block);
+                       simpl; [right|left]; reflexivity.
+           **** simpl. right. reflexivity.
+    ** simpl. left. reflexivity.
+Qed.
+
+
+Proposition block_number_incr :
+  forall (st : write_state) (port : N) (tout : N) (prev_block : N16) (prev_data : string) (prev_buf : string) (next_block : N16),
+    st = Writing tout port prev_block prev_data prev_buf /\ prev_buf <> "" /\
+    N16_to_N prev_block + 2 < 256*256 /\ N16_to_N prev_block + 1 = N16_to_N next_block ->
+    exists (new_data : string) (new_buf : string),
+    fst (handle_event_write (Packet Write port (ACK Server next_block)) st) =
+    Writing 0 port next_block new_data new_buf.
+Proof.
+  intros.
+  destruct H; destruct H0; destruct H1.
+  rewrite H.
+  simpl.
+  case_eq (port =? port); intro.
+  * case_eq (String.eqb prev_buf ""); intro.
+    ** apply String.eqb_eq in H4. congruence.
+    ** case_eq (N16_to_N next_block =? N16_to_N prev_block + 1); intro.
+       *** cut (exists proof, N_to_N16 (N16_to_N prev_block + 1) = Some (exist _ (N16_to_N prev_block + 1) proof)).
+           **** intro.
+                destruct H6.
+                rewrite H6.
+                cut (N16_to_N (exist (fun n : N => n < 256 * 256) (N16_to_N prev_block + 1) x) + 1 < 256*256).
+  + intro. apply safe_N16_incr in H7. simpl.
+    cut ( N16_to_N prev_block + 1 + 1 < 256 * 256).
+    ++ intro.
+       assert (exists xxx, N_to_N16 (N16_to_N prev_block + 1 + 1) = Some (exist _ (N16_to_N prev_block + 1 + 1) xxx)).
+       +++ rewrite H2. rewrite H2 in H8.
+           unfold N_to_N16. exists H8.
+
+           cut (
+               (fun pf : (N16_to_N next_block + 1 ?= 256 * 256) = Lt =>
+                 Some (exist (fun n : N => n < 256 * 256) (N16_to_N next_block + 1) pf)) =
+                 (fun pf : (N16_to_N next_block + 1 ?= 256 * 256) = Lt =>
+                   Some (exist (fun n : N => n < 256 * 256) (N16_to_N next_block + 1) H8))
+             ).
+           ++++ intros ->.
+                generalize (eq_refl ( N16_to_N next_block + 1 ?= 256 * 256)).
+                revert H8.
+                case_eq (N16_to_N next_block + 1 ?= 256 * 256);
+                  intros; unfold N.lt in H1; congruence + reflexivity.
+           ++++ extensionality pf.
+                f_equal.
+                f_equal.
+                apply UIP_dec.
+                decide equality.
+       +++ destruct H9. rewrite H9. simpl.
+           assert ((exist (fun n : N => n < 65536) (N16_to_N prev_block + 1) x) = next_block).
+           ++++ assert (N16_to_N (exist (fun n : N => n < 65536) (N16_to_N prev_block + 1) x) = N16_to_N next_block).
+  - assert (N16_to_N (exist (fun n : N => n < 65536) (N16_to_N prev_block + 1) x) = N16_to_N prev_block + 1).
+    -- destruct N16_to_N; simpl; reflexivity.
+    -- rewrite H10. assumption.
+  - destruct next_block.
+    revert H10.
+    generalize ((exist (fun n : N => n < 65536) (N16_to_N prev_block + 1) x)).
+    generalize (exist (fun n : N => n < 256 * 256) x1 l).
+    simpl.
+    remember N16_to_N_injection as XX.
+    unfold N16 in XX.
+    cut ( forall s s0 : {n : N | n < 256 * 256}, N16_to_N s0 = N16_to_N s -> s0 = s).
+    -- simpl. intro. assumption.
+    -- intuition.
+       ++++ rewrite H10. destruct (pop_block prev_buf). simpl. exists s. exists s0. reflexivity.
+    ++ zify. omega.
+    + simpl. zify. omega.
+      **** apply safe_N16_incr. zify. omega.
+      *** eexists. eexists.
+          case_eq (N16_to_N next_block =? N16_to_N prev_block); intro.
+          **** exfalso. apply eq_sym in H2. apply N.eqb_eq in H2. congruence.
+          **** case_eq (N16_to_N next_block <? N16_to_N prev_block); intro.
+    + exfalso. apply eq_sym in H2. apply N.eqb_eq in H2. congruence.
+    + exfalso. apply eq_sym in H2. apply N.eqb_eq in H2. congruence.
+      * exfalso. assert (port = port). trivial. apply N.eqb_eq in H4. congruence.
+        Unshelve.
+        exact "".
+        exact "".
+Qed.
 
 Definition handle_unparsed_event_write (ev : unparsed_event) (st : write_state): (write_state * option (string * option N)) :=
   let pev :=

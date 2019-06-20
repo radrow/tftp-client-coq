@@ -2,6 +2,7 @@ Require Import Coq.Strings.String.
 Require Import Coq.Strings.Ascii.
 Require Import Coq.NArith.BinNat.
 Require Import Coq.Arith.Compare.
+Require Import Coq.Logic.Eqdep_dec.
 Require Import ZArith.
 
 
@@ -41,6 +42,26 @@ Theorem two_N8_bounds (a : N8) (b : N8) : N8_to_N a * 256 + N8_to_N b < 256*256.
   zify.
   omega.
 Qed.
+
+
+Theorem N16_to_N_injection : forall (a : N16) (b : N16), N16_to_N a = N16_to_N b -> a = b.
+Proof.
+  intros.
+  unfold N16_to_N in H.
+  unfold proj1_sig in H.
+  revert H.
+  destruct a.
+  destruct b.
+  intro.
+  revert l.
+  revert l0.
+  rewrite H.
+  intros.
+  assert (l0 = l).
+  * apply UIP_dec. decide equality.
+  * rewrite H0. reflexivity.
+Qed.
+
 
 Definition N16_of_two_N8 (a : N8) (b : N8): N16.
   refine (exist _ (N8_to_N a * 256 + N8_to_N b) (two_N8_bounds a b)).
