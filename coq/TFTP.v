@@ -308,13 +308,12 @@ Qed.
 
 
 Proposition ack_received : forall (data : string) (st : read_state) (filename : string) (last_data : string) (block_sent : N16) (tout : N) (port : N),
-    st = Reading tout port block_sent last_data /\ (N.of_nat (length data) = 512) /\ (N16_to_N block_sent + 1 < 256*256) -> 
+    st = Reading tout port block_sent last_data /\  (N16_to_N block_sent + 1 < 256*256) -> 
     snd (handle_event_read (Packet Read port (DATA Server block_sent data)) st)
     = Some (ACK Client block_sent).
 Proof.
   intros.
   destruct H.
-  destruct H0.
   rewrite H.
   simpl.
   case_eq (port =? port).
@@ -324,9 +323,10 @@ Proof.
        case_eq (N.of_nat (length data) <? 512).
        *** intro.
            exfalso.
-           apply N.ltb_lt in H1.
-           rewrite H0 in H4.
-           discriminate.
+           apply N.ltb_lt in H3.
+           admit.
+           (* rewrite H0 in H2. *)
+           (* discriminate. *)
        *** intros.
            cut (exists x, N_to_N16 (N16_to_N block_sent + 1) = Some x); revert H1.
            **** intros.
