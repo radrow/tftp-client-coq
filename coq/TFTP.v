@@ -275,8 +275,40 @@ Proof.
     ** simpl. left. reflexivity.
 Qed.
 
-Proposition ack_incr : forall (data : string) (st : read_state) (filename : string) (last_data : string) (block_sent : N16) (tout : N) (port : N),
-    st = Reading tout port block_sent last_data /\ (N.of_nat (length data) = 512) /\ (N16_to_N block_sent < 256*256 - 1) -> 
+
+Proposition read_block_incr :
+  forall (data : string) (st : read_state) (filename : string) (last_data : string) (block_sent : N16) (tout : N) (port : N) (next_block : N16),
+    N.of_nat (length data) = 512 /\ st = Reading tout port block_sent last_data /\ N16_to_N block_sent + 1 = N16_to_N next_block /\ (N16_to_N block_sent + 1 < 256*256) ->
+    fst (handle_event_read (Packet Read port (DATA Server block_sent data)) st)
+    = Reading 0 port next_block data.
+Proof.
+  intros.
+  destruct H.
+  destruct H0.
+  destruct H1.
+  rewrite H0.
+  simpl.
+  case_eq (port =? port); intro.
+  * case_eq (N16_to_N block_sent =? N16_to_N block_sent); intro.
+    ** case_eq (N.of_nat (length data) <? 512); intro.
+       *** exfalso. apply N.ltb_lt in H5. zify. omega.
+       *** cut (exists proof, N_to_N16 (N16_to_N block_sent + 1) = Some (exist _ (N16_to_N block_sent + 1) proof)).
+           **** intro. destruct H6. rewrite H6. simpl.
+                assert ((exist (fun n : N => n < 65536) (N16_to_N block_sent + 1) x) = next_block).
+  + assert (N16_to_N (exist (fun n : N => n < 65536) (N16_to_N block_sent + 1) x) = N16_to_N block_sent + 1).
+    ++ destruct block_sent. simpl. reflexivity.
+    ++ apply N16_to_N_injection. assumption.
+  + rewrite H7. reflexivity.
+           **** apply safe_N16_incr. assumption.
+    ** assert (N16_to_N block_sent = N16_to_N block_sent). reflexivity.
+       apply N.eqb_eq in H5. congruence.
+  * assert (port = port). reflexivity.
+    apply N.eqb_eq in H4. congruence.
+Qed.
+
+
+Proposition ack_received : forall (data : string) (st : read_state) (filename : string) (last_data : string) (block_sent : N16) (tout : N) (port : N),
+    st = Reading tout port block_sent last_data /\ (N.of_nat (length data) = 512) /\ (N16_to_N block_sent + 1 < 256*256) -> 
     snd (handle_event_read (Packet Read port (DATA Server block_sent data)) st)
     = Some (ACK Client block_sent).
 Proof.
@@ -564,10 +596,11 @@ Proof.
         exact "".
 Qed.
 
+
 Proposition block_number_persist :
   forall (st : write_state) (port : N) (tout : N) (prev_block : N16) (prev_data : string) (prev_buf : string),
     st = Writing tout port prev_block prev_data prev_buf /\ prev_buf <> "" /\
-    N16_to_N prev_block + 1 + 1 < 256*256 ->
+    N16_to_N prev_block + 1 < 256*256 ->
     fst (handle_event_write (Packet Write port (ACK Server prev_block)) st) =
     Writing tout port prev_block prev_data prev_buf.
   intros.
@@ -683,7 +716,7 @@ Qed.
 Proposition resend_after_prev_ack :
   forall (st : write_state) (port : N) (tout : N) (prev_block : N16) (next_block : N16) (prev_data : string) (prev_buf : string),
     st = Writing tout port prev_block prev_data prev_buf /\ prev_buf <> "" /\
-    N16_to_N prev_block + 1 + 1 < 256*256 /\ N16_to_N prev_block + 1 = N16_to_N next_block ->
+    N16_to_N prev_block + 1 < 256*256 /\ N16_to_N prev_block + 1 = N16_to_N next_block ->
     snd (handle_event_write (Packet Write port (ACK Server prev_block)) st) =
     Some (DATA Client next_block prev_data).
   intros.

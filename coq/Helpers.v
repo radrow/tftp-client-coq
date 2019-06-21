@@ -65,20 +65,21 @@ Qed.
 
 
 Lemma safe_N16_incr_any : forall (n16 : N16),
-    (N16_to_N n16 < 256*256 - 1) -> exists (m16 : N16), N_to_N16 (N16_to_N n16 + 1) = Some m16.
+    let n := N16_to_N n16 + 1 in
+    (n < 256*256) -> exists (m16 : N16), N_to_N16 n = Some m16.
 Proof.
   intros.
-  cut (N16_to_N n16 + 1 < 256 * 256).
+  cut (n < 256 * 256).
   * generalize (N16_to_N n16 + 1).
     intros.
-    exists (exist _ n H0).
+    eexists.
     unfold N_to_N16.
     cut (
         (fun pf : (n ?= 256 * 256) = Lt =>
-           Some (exist (fun n0 : N => n0 < 256 * 256) n pf))
+           Some (exist (fun n : N => n < 256 * 256) n pf))
         =
         (fun pf : (n ?= 256 * 256) = Lt =>
-           Some (exist (fun n0 : N => n0 < 256 * 256) n H0))).
+           Some (exist (fun n : N => n < 256 * 256) n H))).
     ** intros ->.
        generalize (eq_refl (n ?= 256 * 256)).
        revert H0.
@@ -94,7 +95,7 @@ Qed.
 
 Lemma safe_N16_incr : forall (n16 : N16),
     let n := N16_to_N n16 + 1 in
-    (n + 1 < 256*256) -> exists (H0 : n < 256*256), N_to_N16 n = Some (exist _ n H0).
+    (n < 256*256) -> exists (H0 : n < 256*256), N_to_N16 n = Some (exist _ n H0).
 Proof.
   intros.
   cut (n < 256 * 256).
