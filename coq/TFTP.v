@@ -136,7 +136,7 @@ Definition handle_event_read (ev : event Read) (st : state Read) :
                             Some (ERROR Client Read IllegalOP "Bad block order")) in
       let make_ack port data b_received :=
           match N_of_nat (String.length data) <? 512 with
-          | true => (ReadingFinished data, None)
+          | true => (ReadingFinished data, Some (ACK Client b_received))
           | false =>
             match N_to_N16 (N16_to_N b_received + 1) with
             | None => (ReadingError NotDefined "Block number overflow",
@@ -322,30 +322,28 @@ Proof.
     ** intro.
        case_eq (N.of_nat (length data) <? 512).
        *** intro.
-           exfalso.
            apply N.ltb_lt in H3.
-           admit.
-           (* rewrite H0 in H2. *)
-           (* discriminate. *)
+           simpl.
+           reflexivity.
        *** intros.
            cut (exists x, N_to_N16 (N16_to_N block_sent + 1) = Some x); revert H1.
            **** intros.
-                destruct H5.
-                rewrite H5.
+                destruct H4.
+                rewrite H4.
                 simpl.
                 reflexivity.
-           ****  apply safe_N16_incr_any.
+           **** intro. apply safe_N16_incr_any. assumption.
     ** intro.
        exfalso.
        assert (N16_to_N block_sent = N16_to_N block_sent).
        trivial.
-       apply N.eqb_eq in H4.
+       apply N.eqb_eq in H3.
        congruence.
   * intro.
     exfalso.
     assert (port = port).
     trivial.
-    apply N.eqb_eq in H3.
+    apply N.eqb_eq in H2.
     congruence.
 Qed.
 
