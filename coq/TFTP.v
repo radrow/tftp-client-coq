@@ -389,14 +389,16 @@ Definition handle_event_write (ev : event Write) (st : state Write) :
                         then (WritingFinished, None)
                         else if N16_to_N block_acked =? (N16_to_N prev_block) + 1
                              then match N_to_N16 (N16_to_N prev_block + 1) with
-                                  | None => (WritingError NotDefined "Block number overflow",
-                                            Some (ERROR Client Write NotDefined "Block number overflow"))
+                                  | None => overflow_err
                                   | Some bs16 => make_data port buf bs16
                                   end
                              else if N16_to_N block_acked =? N16_to_N prev_block
-                                  then (st, Some (DATA Client block_acked prev_data))
+                                  then match N_to_N16 (N16_to_N prev_block + 1) with
+                                  | None => overflow_err
+                                  | Some bs16 => (st, Some (DATA Client bs16 prev_data))
+                                  end
                                   else if N16_to_N block_acked <? N16_to_N prev_block
-                                  then (st, None)
+                                       then (st, None)
                                        else block_ord_err
                    else (st, None)
                  | WritingError _ _ => (st, None)
@@ -474,9 +476,10 @@ Proof.
                   ++ destruct (N_to_N16 (N16_to_N n1 + 1));
                 [apply N.eqb_eq in H0; rewrite <- H0; right | left];
                 unfold working_port_write; destruct (pop_block (String a buf)); simpl; reflexivity.
-                  ++ simpl. left. reflexivity.
+                  ++ destruct (N_to_N16 (N16_to_N prev_block + 1)); simpl; left; reflexivity.
                 + destruct (N16_to_N n0 =? N16_to_N prev_block).
-                  ++ simpl. right. reflexivity.
+                  ++ destruct (N_to_N16 (N16_to_N prev_block + 1));
+                     simpl; [right|left]; reflexivity.
                   ++ destruct (N16_to_N n0 <? N16_to_N prev_block);
                        simpl; [right|left]; reflexivity.
            **** simpl. right. reflexivity.
@@ -559,6 +562,153 @@ Proof.
         Unshelve.
         exact "".
         exact "".
+Qed.
+
+Proposition block_number_persist :
+  forall (st : write_state) (port : N) (tout : N) (prev_block : N16) (prev_data : string) (prev_buf : string),
+    st = Writing tout port prev_block prev_data prev_buf /\ prev_buf <> "" /\
+    N16_to_N prev_block + 1 + 1 < 256*256 ->
+    fst (handle_event_write (Packet Write port (ACK Server prev_block)) st) =
+    Writing tout port prev_block prev_data prev_buf.
+  intros.
+  destruct H; destruct H0.
+  rewrite H.
+  simpl.
+  case_eq (port =? port); intro.
+  * case_eq (String.eqb prev_buf ""); intro.
+    ** apply String.eqb_eq in H3. congruence.
+    ** case_eq (N16_to_N prev_block =? N16_to_N prev_block + 1); intro.
+       *** assert (N16_to_N prev_block <> N16_to_N prev_block + 1).
+           zify. omega. apply N.eqb_eq in H4. congruence.
+       *** case_eq (N16_to_N prev_block =? N16_to_N prev_block); intro.
+           **** assert (N16_to_N prev_block + 1 < 256*256).
+  + zify. omega.
+  + assert (exists proof, N_to_N16 (N16_to_N prev_block + 1) = Some (exist _ (N16_to_N prev_block + 1) proof)).
+    ++ apply safe_N16_incr. assumption.
+    ++ destruct H7. rewrite H7. simpl. reflexivity.
+           **** assert (N16_to_N prev_block = N16_to_N prev_block). reflexivity.
+                apply N.eqb_eq in H6. exfalso. congruence.
+  * simpl. assert (port =? port = true). apply N.eqb_eq. reflexivity. congruence.
+Qed.
+
+Proposition send_next_after_ACK :
+  forall (st : write_state) (port : N) (tout : N) (prev_block : N16) (prev_data : string) (prev_buf : string) (next_block : N16) (sending_block : N16) (new_data : string),
+    st = Writing tout port prev_block prev_data prev_buf /\ prev_buf <> "" /\ new_data = fst (pop_block prev_buf) /\ (N16_to_N next_block + 1 = N16_to_N sending_block) /\
+    N16_to_N prev_block + 2 < 256*256 /\ N16_to_N prev_block + 1 = N16_to_N next_block ->
+    exists (new_data : string) (new_buf : string),
+    snd (handle_event_write (Packet Write port (ACK Server next_block)) st) =
+    Some (DATA Client sending_block new_data).
+Proof.
+  intros.
+  destruct H.
+  destruct H0.
+  destruct H1.
+  destruct H2.
+  destruct H3.
+  rewrite H.
+  simpl.
+  assert (port = port). reflexivity.
+  apply N.eqb_eq in H5.
+  rewrite H5.
+  case_eq (String.eqb prev_buf ""); intro.
+  * apply String.eqb_eq in H6. congruence.
+  * apply eq_sym in H4. apply N.eqb_eq in H4.
+    case_eq (N16_to_N next_block =? N16_to_N prev_block + 1); intro.
+    ** assert (N16_to_N prev_block + 1 < 256 * 256). zify. omega.
+       revert H8.
+       cut (exists proof, N_to_N16 (N16_to_N prev_block + 1) = Some (exist _ (N16_to_N prev_block + 1) proof)).
+       *** intro.
+           destruct H8.
+           rewrite H8.
+           cut (N16_to_N (exist (fun n : N => n < 256 * 256) (N16_to_N prev_block + 1) x) + 1 < 256*256).
+  + intro. apply safe_N16_incr in H9. simpl.
+    cut ( N16_to_N prev_block + 1 + 1 < 256 * 256).
+    ++ intro.
+       assert (exists xxx, N_to_N16 (N16_to_N prev_block + 1 + 1) = Some (exist _ (N16_to_N prev_block + 1 + 1) xxx)).
+       +++ apply N.eqb_eq in H4. rewrite <- H4. rewrite <- H4 in H10.
+           unfold N_to_N16. exists H10.
+           cut (
+               (fun pf : (N16_to_N next_block + 1 ?= 256 * 256) = Lt =>
+                 Some (exist (fun n : N => n < 256 * 256) (N16_to_N next_block + 1) pf)) =
+                 (fun pf : (N16_to_N next_block + 1 ?= 256 * 256) = Lt =>
+                   Some (exist (fun n : N => n < 256 * 256) (N16_to_N next_block + 1) H10))
+             ).
+           ++++ intros ->.
+                generalize (eq_refl ( N16_to_N next_block + 1 ?= 256 * 256)).
+                revert H10.
+                case_eq (N16_to_N next_block + 1 ?= 256 * 256);
+                  intros; unfold N.lt in H1; congruence + reflexivity.
+           ++++ extensionality pf.
+                f_equal.
+                f_equal.
+                apply UIP_dec.
+                decide equality.
+       +++ destruct H11. rewrite H11. simpl.
+           assert ((exist (fun n : N => n < 65536) (N16_to_N prev_block + 1) x) = next_block).
+           ++++ assert (N16_to_N (exist (fun n : N => n < 65536) (N16_to_N prev_block + 1) x) = N16_to_N next_block).
+  - assert (N16_to_N (exist (fun n : N => n < 65536) (N16_to_N prev_block + 1) x) = N16_to_N prev_block + 1).
+    -- destruct N16_to_N; simpl; reflexivity.
+    -- rewrite H12. apply N.eqb_eq in H4. apply eq_sym in H4. assumption.
+  - destruct next_block.
+    revert H12.
+    generalize ((exist (fun n : N => n < 65536) (N16_to_N prev_block + 1) x)).
+    generalize (exist (fun n : N => n < 256 * 256) x1 l).
+    simpl.
+    remember N16_to_N_injection as XX.
+    unfold N16 in XX.
+    cut ( forall s s0 : {n : N | n < 256 * 256}, N16_to_N s0 = N16_to_N s -> s0 = s).
+    -- simpl. intro. assumption.
+    -- intuition.
+       ++++ rewrite H12. destruct (pop_block prev_buf). simpl. exists s. exists s0.
+            assert ( N_to_N16 (N16_to_N prev_block + 1 + 1) =
+                     Some (exist (fun n : N => n < 65536) (N16_to_N prev_block + 1 + 1) x0)
+                   ).
+            rewrite H11. zify. simpl. reflexivity.
+            cut (N16_to_N (exist (fun n : N => n < 65536) (N16_to_N prev_block + 1 + 1) x0) =
+                  N16_to_N sending_block
+                ).
+  - intro.
+    assert (exist (fun n : N => n < 65536) (N16_to_N prev_block + 1 + 1) x0 =
+            sending_block).
+    -- revert H15. apply N16_to_N_injection.
+    -- rewrite H16. reflexivity.
+  - rewrite <- H2. apply N.eqb_eq in H7. rewrite H7.
+    destruct prev_block. simpl. reflexivity.
+  ++ zify. omega.
+    + simpl. zify. omega.
+      *** apply safe_N16_incr. zify. omega.
+    ** congruence.
+Qed.
+
+Proposition resend_after_prev_ack :
+  forall (st : write_state) (port : N) (tout : N) (prev_block : N16) (next_block : N16) (prev_data : string) (prev_buf : string),
+    st = Writing tout port prev_block prev_data prev_buf /\ prev_buf <> "" /\
+    N16_to_N prev_block + 1 + 1 < 256*256 /\ N16_to_N prev_block + 1 = N16_to_N next_block ->
+    snd (handle_event_write (Packet Write port (ACK Server prev_block)) st) =
+    Some (DATA Client next_block prev_data).
+  intros.
+  destruct H; destruct H0; destruct H1.
+  rewrite H.
+  simpl.
+  case_eq (port =? port); intro.
+  * case_eq (String.eqb prev_buf ""); intro.
+    ** apply String.eqb_eq in H4. congruence.
+    ** case_eq (N16_to_N prev_block =? N16_to_N prev_block + 1); intro.
+       *** assert (N16_to_N prev_block <> N16_to_N prev_block + 1).
+           zify. omega. apply N.eqb_eq in H5. congruence.
+       *** case_eq (N16_to_N prev_block =? N16_to_N prev_block); intro.
+           **** simpl.
+                assert (exists proof, N_to_N16 (N16_to_N prev_block + 1) = Some (exist _ (N16_to_N prev_block + 1) proof)).
+    ++ apply safe_N16_incr. assumption.
+    ++ destruct H7. rewrite H7. simpl.
+       assert (exist (fun n : N => n < 65536) (N16_to_N prev_block + 1) x = next_block).
+       +++ assert (N16_to_N (exist (fun n : N => n < 65536) (N16_to_N prev_block + 1) x) = N16_to_N next_block).
+           ++++ assumption.
+           ++++ apply N16_to_N_injection. assumption.
+       +++ rewrite H8. simpl. reflexivity.
+       **** assert (N16_to_N prev_block = N16_to_N prev_block). reflexivity.
+            apply N.eqb_eq in H7. exfalso. congruence.
+  * simpl. assert (port =? port = true). apply N.eqb_eq. reflexivity. congruence.
 Qed.
 
 
