@@ -36,13 +36,14 @@ Inductive read_state : Set :=
 | ReadingInit : N -> string -> read_state
 (* timouts, port, block waiting for, read data*)
 | Reading : N -> N -> N16 -> string -> read_state
-| ReadingFinished : string -> read_state
+| ReadingFinished : N -> string -> read_state
 | ReadingError : error -> string -> read_state
 .
 
 Definition working_port_read (st : read_state) : option N :=
   match st with
   | Reading _ p _ _ => Some p
+  | ReadingFinished p _ => Some p
   | _ => None
   end.
 
@@ -136,7 +137,7 @@ Definition handle_event_read (ev : event Read) (st : state Read) :
                             Some (ERROR Client Read IllegalOP "Bad block order")) in
       let make_ack port data b_received :=
           match N_of_nat (String.length data) <? 512 with
-          | true => (ReadingFinished data, Some (ACK Client b_received))
+          | true => (ReadingFinished port data, Some (ACK Client b_received))
           | false =>
             match N_to_N16 (N16_to_N b_received + 1) with
             | None => (ReadingError NotDefined "Block number overflow",
@@ -177,7 +178,7 @@ Definition handle_event_read (ev : event Read) (st : state Read) :
                         then (st, None)
                         else block_ord_err
               else (st, None)
-            | ReadingFinished _ => (ReadingError IllegalOP "Data after finish", None)
+            | ReadingFinished _ _ => (ReadingError IllegalOP "Data after finish", None)
             | ReadingError _ _ => (st, None)
             end
         | ERROR Server Read err msg => fun _ _ => (ReadingError err msg, None)
@@ -202,9 +203,9 @@ Proof.
 Qed.
 
 Proposition read_error_after_finito :
-  forall (ev : event _) (last_data : string),
+  forall (ev : event _) (last_data : string) (port : N),
   exists (er_out : error) (msg_out : string),
-    fst (handle_event_read ev (ReadingFinished last_data)) = ReadingError er_out msg_out.
+    fst (handle_event_read ev (ReadingFinished port last_data)) = ReadingError er_out msg_out.
 Proof.
   intros.
   dependent destruction ev.
@@ -218,7 +219,7 @@ Proposition finito_after_small_block :
   forall (data : string) (st : read_state) (filename : string) (last_data : string) (block_sent : N16) (tout : N) (port : N),
     (N.of_nat (length data) < 512) /\ ((st = ReadingInit tout filename /\ block_sent = exist _ 1 eq_refl) \/ st = Reading tout port block_sent last_data) ->
     fst (handle_event_read (Packet Read port (DATA Server block_sent data)) st)
-    = ReadingFinished data.
+    = ReadingFinished port data.
 Proof.
   intros.
   destruct H.
@@ -265,7 +266,7 @@ Proof.
     ** case_eq (port =? n); intro.
        *** case_eq (N16_to_N block =? N16_to_N n0);
              case_eq (N.of_nat (length s0) <? 512); intros.
-           **** simpl. left. reflexivity.
+           **** right. simpl. apply N.eqb_eq in H0. rewrite H0. reflexivity.
            **** destruct (N_to_N16 (N16_to_N n0 + 1)).
   + simpl. right. apply N.eqb_eq in H0. rewrite H0. reflexivity.
   + simpl. left. reflexivity.
