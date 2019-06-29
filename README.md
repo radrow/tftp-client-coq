@@ -15,7 +15,7 @@ Uploading a file
 ocamlrun main.byte -h 127.0.0.1 -m r file.txt
 ```
 
-Proven/constrained stuff:
+### Proven/constrained stuff
 
  - 16 bits bounds checks for datagram naturals
  - 8 bits bounds checks for ascii to nat conversions
