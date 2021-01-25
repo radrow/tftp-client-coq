@@ -1,7 +1,8 @@
 # tftp-client-coq
 
-Simple TFTP client written in Coq (with IO handling in OCaml) as an assesment for MIMUW Computer-Aided Verification course. The program is written as state machine that reacts on two kinds of events: new packet income and timeout signal from OCaml.
-The implementation should follow [RFC1350](https://tools.ietf.org/html/rfc1350) standard.
+Simple TFTP client written in Coq (with IO handling done in OCaml) as an assesment for the Computer-Aided Verification course at MIMUW. The program is written as a state machine that reacts on two kinds of events: new packet income and timeout signal from OCaml.
+
+The implementation follows [RFC1350](https://tools.ietf.org/html/rfc1350) standard. The compliance with the specification is ensured by tight typing and constructively proven theorems in intuitionistic logic.
 
 ### Example usage
 
